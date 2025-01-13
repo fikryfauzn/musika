@@ -1,0 +1,465 @@
+basePath: /
+definitions:
+  models.DateOnly:
+    properties:
+      time.Time:
+        type: string
+    type: object
+  models.GenericResponse:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  models.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  models.Notification:
+    properties:
+      created_at:
+        type: string
+      is_read:
+        type: boolean
+      message:
+        type: string
+      notification_id:
+        type: integer
+      type:
+        type: string
+      user:
+        allOf:
+        - $ref: '#/definitions/models.User'
+        description: Relationship
+      user_id:
+        description: Foreign key
+        type: integer
+    type: object
+  models.Ticket:
+    properties:
+      batch:
+        example: 1
+        type: integer
+      created_at:
+        type: string
+      description:
+        example: VIP access to the main stage.
+        type: string
+      end_date:
+        allOf:
+        - $ref: '#/definitions/models.DateOnly'
+        description: '@swagger:ignore'
+      event_id:
+        example: 1
+        type: integer
+      price:
+        example: 250
+        type: number
+      quantity_available:
+        example: 100
+        type: integer
+      start_date:
+        allOf:
+        - $ref: '#/definitions/models.DateOnly'
+        description: '@swagger:ignore'
+      ticket_id:
+        type: integer
+      type:
+        example: VIP
+        type: string
+      updated_at:
+        type: string
+    type: object
+  models.TokenResponse:
+    properties:
+      token:
+        type: string
+    type: object
+  models.Transaction:
+    properties:
+      created_at:
+        type: string
+      payment_gateway:
+        type: string
+      payment_status:
+        type: string
+      quantity:
+        type: integer
+      ticket:
+        allOf:
+        - $ref: '#/definitions/models.Ticket'
+        description: Relationship
+      ticket_id:
+        description: Foreign key
+        type: integer
+      total_price:
+        type: number
+      transaction_id:
+        type: integer
+      updated_at:
+        type: string
+      user:
+        allOf:
+        - $ref: '#/definitions/models.User'
+        description: Relationship
+      user_id:
+        description: Foreign key
+        type: integer
+    type: object
+  models.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        description: Changed to VARCHAR(255)
+        type: string
+      name:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@coachella.com
+    name: API Support
+    url: http://www.swagger.io/support
+  description: This is the API documentation for the Coachella backend API.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Coachella API Documentation
+  version: "1.0"
+paths:
+  /auth/admin-login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate an admin and issue a JWT token for accessing admin-specific
+        routes
+      parameters:
+      - description: Admin credentials (email and password)
+        in: body
+        name: credentials
+        required: true
+        schema:
+          $ref: '#/definitions/models.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: JWT token for admin
+          schema:
+            $ref: '#/definitions/models.TokenResponse'
+        "400":
+          description: Invalid request body
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+        "401":
+          description: Invalid email or password
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Admin Login
+      tags:
+      - Authentication
+  /auth/user-login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate a user and issue a JWT token for accessing user-specific
+        routes
+      parameters:
+      - description: User credentials (email and password)
+        in: body
+        name: credentials
+        required: true
+        schema:
+          $ref: '#/definitions/models.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: JWT token for user
+          schema:
+            $ref: '#/definitions/models.TokenResponse'
+        "400":
+          description: Invalid request body
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+        "401":
+          description: Invalid email or password
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: User Login
+      tags:
+      - Authentication
+  /notifications:
+    get:
+      description: Get all notifications for a specific user
+      parameters:
+      - description: User ID
+        in: query
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Notification'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Retrieve notifications for a user
+      tags:
+      - Notifications
+  /notifications/{id}:
+    patch:
+      description: Update a notification's status to "read"
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Notification'
+        "404":
+          description: Notification not found
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Mark a notification as read
+      tags:
+      - Notifications
+  /tickets:
+    get:
+      description: Get a list of all available tickets along with their associated
+        event details
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of tickets
+          schema:
+            items:
+              $ref: '#/definitions/models.Ticket'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Retrieve all tickets
+      tags:
+      - Tickets
+    post:
+      consumes:
+      - application/json
+      description: Add a new ticket to the system
+      parameters:
+      - description: Ticket details
+        in: body
+        name: ticket
+        required: true
+        schema:
+          $ref: '#/definitions/models.Ticket'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: The newly created ticket
+          schema:
+            $ref: '#/definitions/models.Ticket'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Create a ticket
+      tags:
+      - Tickets
+  /tickets/{id}:
+    delete:
+      description: Remove a ticket from the system
+      parameters:
+      - description: Ticket ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: Ticket deleted successfully
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Delete a ticket
+      tags:
+      - Tickets
+    get:
+      description: Get a single ticket's details using its ID, including event information
+      parameters:
+      - description: Ticket ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Details of the ticket
+          schema:
+            $ref: '#/definitions/models.Ticket'
+        "404":
+          description: Ticket not found
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Retrieve a ticket by ID
+      tags:
+      - Tickets
+    put:
+      consumes:
+      - application/json
+      description: Modify the details of an existing ticket
+      parameters:
+      - description: Ticket ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Updated ticket details
+        in: body
+        name: ticket
+        required: true
+        schema:
+          $ref: '#/definitions/models.Ticket'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: The updated ticket
+          schema:
+            $ref: '#/definitions/models.Ticket'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+        "404":
+          description: Ticket not found
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Update a ticket
+      tags:
+      - Tickets
+  /transactions:
+    get:
+      description: Get a list of all transactions, including user and ticket details
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Transaction'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Retrieve all transactions
+      tags:
+      - Transactions
+  /transactions/{id}:
+    get:
+      description: Get a transaction's details, including user and ticket details
+      parameters:
+      - description: Transaction ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Transaction'
+        "404":
+          description: Transaction not found
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Retrieve a transaction by ID
+      tags:
+      - Transactions
+  /user-transactions:
+    get:
+      description: Get all transactions for a specific user, including user and ticket
+        details
+      parameters:
+      - description: User ID
+        in: query
+        name: user_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Transaction'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.GenericResponse'
+      summary: Retrieve user transactions
+      tags:
+      - Transactions
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
