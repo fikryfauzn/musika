@@ -1,19 +1,20 @@
 package main
 
 import (
-	_ "coachella-backend/docs" // Swagger docs package (import for side effects)
-	"github.com/gin-gonic/gin"
-	"github.com/swaggo/files"       // Swagger UI files
-	"github.com/swaggo/gin-swagger" // Gin Swagger middleware
-
 	"coachella-backend/config"              // Database configuration package
+	_ "coachella-backend/docs"              // Swagger docs package (import for side effects)
 	"coachella-backend/internal/handlers"   // Handlers
 	"coachella-backend/internal/middleware" // Middleware for authentication and authorization
+	"coachella-backend/internal/tasks"      // Scheduled tasks
+	"github.com/gin-gonic/gin"
+	"github.com/go-co-op/gocron"
 	"github.com/joho/godotenv"
+	"github.com/swaggo/files"       // Swagger UI files
+	"github.com/swaggo/gin-swagger" // Gin Swagger middleware
 	"log"
 	"os"
 	"path/filepath"
-
+	"time"
 )
 
 // @title Coachella API Documentation
@@ -35,70 +36,113 @@ import (
 // @in header
 // @name Authorization
 func main() {
-
-	wd, _ := os.Getwd()
-	log.Println("Current working directory:", wd)
-
-
-	// Explicitly load .env from the backend folder
-	err := godotenv.Load(filepath.Join("..", ".env"))
-	if err != nil {
+	// Load environment variables
+	if err := loadEnv(); err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
 	}
-
-	// Example: Accessing the SMTP host
-	smtpHost := os.Getenv("SMTP_HOST")
-	log.Println("SMTP Host:", smtpHost)
 
 	// Initialize database connection
 	config.ConnectDatabase()
 
+	// Initialize scheduler for background tasks
+	initializeScheduler()
+
 	// Set up Gin router
+	router := setupRouter()
+
+	// Start the server
+	log.Println("Starting server on port 8080...")
+	if err := router.Run(":8080"); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+// loadEnv loads the environment variables from the .env file
+func loadEnv() error {
+	wd, _ := os.Getwd()
+	log.Println("Current working directory:", wd)
+
+	err := godotenv.Load(filepath.Join("..", ".env"))
+	if err != nil {
+		return err
+	}
+
+	log.Println("SMTP Host:", os.Getenv("SMTP_HOST")) // Example log
+	return nil
+}
+
+// initializeScheduler sets up and starts the task scheduler
+func initializeScheduler() {
+	scheduler := gocron.NewScheduler(time.Local)
+
+	// Schedule tasks
+	scheduler.Every(1).Day().At("09:00").Do(handlers.SendEventReminders) // Event reminders
+	go func() {
+		for {
+			tasks.CleanUpExpiredTransactions() // Cleanup expired transactions
+			time.Sleep(1 * time.Minute)
+		}
+	}()
+
+	scheduler.StartAsync()
+}
+
+// setupRouter initializes the Gin router and routes
+func setupRouter() *gin.Engine {
 	r := gin.Default()
 
-	r.GET("/test-email", handlers.SendTestEmail)
-
-	// Register Swagger endpoint
+	// Swagger documentation
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// Authentication routes
-	r.POST("/auth/admin-login", handlers.AdminLogin) // Admin login
-	r.POST("/auth/user-login", handlers.UserLogin)   // User login
+	// Test endpoint for email
+	r.GET("/test-email", handlers.SendTestEmail)
 
-	// Admin routes (protected by AuthMiddleware and RoleMiddleware)
+	// Authentication routes
+	r.POST("/auth/admin-login", handlers.AdminLogin)
+	r.POST("/auth/user-login", handlers.UserLogin)
+
+	// Admin routes (protected)
 	adminGroup := r.Group("/admin", middleware.AuthMiddleware(), middleware.RoleMiddleware("admin"))
 	{
-		adminGroup.POST("/tickets", handlers.CreateTicket)       // Admin can create tickets
-		adminGroup.PUT("/tickets/:id", handlers.UpdateTicket)    // Admin can update tickets
-		adminGroup.DELETE("/tickets/:id", handlers.DeleteTicket) // Admin can delete tickets
+		adminGroup.POST("/tickets", handlers.CreateTicket)
+		adminGroup.PUT("/tickets/:id", handlers.UpdateTicket)
+		adminGroup.DELETE("/tickets/:id", handlers.DeleteTicket)
 	}
 
-	// User routes (protected by AuthMiddleware and RoleMiddleware)
+	// User routes (protected)
 	userGroup := r.Group("/user", middleware.AuthMiddleware(), middleware.RoleMiddleware("user"))
 	{
-		userGroup.GET("/transactions", handlers.GetUserTransactions) // Users can view their transactions
+		userGroup.GET("/transactions", handlers.GetUserTransactions)
+		userGroup.POST("/transactions", handlers.CreateTransaction)
 	}
 
-	// Public ticket routes (accessible to all)
+	// Waitlist routes
+	waitlistGroup := r.Group("/waitlist")
+	{
+		waitlistGroup.POST("", handlers.AddUserToWaitlist)
+		waitlistGroup.GET("", handlers.GetWaitlist)
+	}
+
+	// Ticket routes (public)
 	ticketGroup := r.Group("/tickets")
 	{
-		ticketGroup.GET("", handlers.GetTickets)        // List all tickets
-		ticketGroup.GET("/:id", handlers.GetTicketByID) // Get ticket by ID
+		ticketGroup.GET("", handlers.GetTickets)
+		ticketGroup.GET("/:id", handlers.GetTicketByID)
 	}
 
-	// Transaction routes (admin-only for general management)
+	// Transaction routes (admin-only)
 	transactionGroup := r.Group("/transactions", middleware.AuthMiddleware(), middleware.RoleMiddleware("admin"))
 	{
-		transactionGroup.GET("", handlers.GetTransactions)                       // Admin can view all transactions
-		transactionGroup.GET("/:id", handlers.GetTransactionByID)                // Admin can view specific transaction
-		transactionGroup.GET("/user-transactions", handlers.GetUserTransactions) // Users can view their own transactions
+		transactionGroup.GET("", handlers.GetTransactions)
+		transactionGroup.GET("/:id", handlers.GetTransactionByID)
+		transactionGroup.GET("/user-transactions", handlers.GetUserTransactions)
 	}
 
 	// Notification routes (user-specific)
 	notificationGroup := r.Group("/notifications", middleware.AuthMiddleware())
 	{
-		notificationGroup.GET("", handlers.GetNotifications)             // Users can view notifications
-		notificationGroup.PATCH("/:id", handlers.MarkNotificationAsRead) // Mark notification as read
+		notificationGroup.GET("", handlers.GetNotifications)
+		notificationGroup.PATCH("/:id", handlers.MarkNotificationAsRead)
 	}
 
 	// Protected test route
@@ -114,6 +158,5 @@ func main() {
 		})
 	})
 
-	// Start the server
-	r.Run(":8080")
+	return r
 }
