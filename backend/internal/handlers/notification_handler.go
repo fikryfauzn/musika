@@ -2,9 +2,14 @@ package handlers
 
 import (
 	"coachella-backend/config"
+	"coachella-backend/internal/email"
 	"coachella-backend/internal/models"
-	"github.com/gin-gonic/gin"
+	"log"
 	"net/http"
+	"path/filepath"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // GetNotifications retrieves all notifications for a user
@@ -54,7 +59,60 @@ func MarkNotificationAsRead(c *gin.Context) {
 		return
 	}
 
-	notification.IsRead = true
 	config.DB.Save(&notification)
 	c.JSON(http.StatusOK, notification)
+}
+
+func NotifyWaitlistedUsers(ticketID uint) {
+	var waitlist []models.Waitlist
+	result := config.DB.Where("ticket_id = ?", ticketID).Preload("User").Find(&waitlist)
+
+	if result.Error != nil {
+		log.Printf("Error fetching waitlist for ticket %d: %v\n", ticketID, result.Error)
+		return
+	}
+
+	for _, entry := range waitlist {
+		// Prepare notification content
+		content := "Tickets are now available for the event you were waiting for!"
+
+		notification := models.Notification{
+			UserID:         entry.UserID,
+			NotificationType: "Update", // Or "Reminder" if relevant
+			Content:        content,
+			CreatedAt:      time.Now(),
+		}
+
+		// Save notification to the database
+		if err := config.DB.Create(&notification).Error; err != nil {
+			log.Printf("Failed to create notification for user %d: %v\n", entry.UserID, err)
+			continue
+		}
+
+		// Prepare email content
+		templateData := map[string]interface{}{
+			"name":       entry.User.Name,
+			"ticket_id":  ticketID,
+			"ticket_url": "http://example.com/tickets/" + string(ticketID), // Replace with actual URL
+		}
+
+		// Render email template
+		templatePath := filepath.Join("..", "templates", "emails", "waitlist_notification.html")
+		body, err := email.RenderTemplate(templatePath, templateData)
+		if err != nil {
+			log.Printf("Failed to render waitlist email for user %d: %v\n", entry.UserID, err)
+			continue
+		}
+
+		// Send email
+		err = email.SendEmail(entry.User.Email, "Tickets Now Available!", body)
+		if err != nil {
+			log.Printf("Failed to send waitlist email to user %d: %v\n", entry.UserID, err)
+		} else {
+			log.Printf("Waitlist email sent to user %d for ticket %d\n", entry.UserID, ticketID)
+		}
+	}
+
+	// Optional: Clear waitlist entries for the notified ticket
+	config.DB.Where("ticket_id = ?", ticketID).Delete(&models.Waitlist{})
 }

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Thank You for Your Purchase!</title>
+</head>
+<body>
+    <h1>Thank You for Your Purchase!</h1>
+    <p>Dear {{.name}},</p>
+    <p>You have successfully purchased the following ticket:</p>
+    <ul>
+        <li><strong>Event:</strong> {{.event_name}}</li>
+        <li><strong>Ticket Type:</strong> {{.ticket_type}}</li>
+        <li><strong>Quantity:</strong> {{.quantity}}</li>
+        <li><strong>Total Price:</strong> {{.total_price}}</li>
+    </ul>
+    <p>We look forward to seeing you on {{.event_date}}!</p>
+    <p>Regards,<br>The Coachella Team</p>
+</body>
+</html>
